@@ -1,8 +1,9 @@
-import { getRepository } from 'typeorm';
-// import AppError from '../errors/AppError';
+import { getRepository, getCustomRepository } from 'typeorm';
+import AppError from '../errors/AppError';
 
 import Transaction from '../models/Transaction';
 import Category from '../models/Category';
+import TransactionsRepository from '../repositories/TransactionsRepository';
 
 interface NewTransactionRequestDTO {
   title: string;
@@ -18,8 +19,18 @@ class CreateTransactionService {
     type,
     category,
   }: NewTransactionRequestDTO): Promise<Transaction> {
-    const transactionRepository = getRepository(Transaction);
+    const transactionRepository = getCustomRepository(TransactionsRepository);
     const categoryRepository = getRepository(Category);
+
+    const balance = await transactionRepository.getBalance();
+
+    if (balance.total - value < 0 && type === 'outcome') {
+      throw new AppError('The value must be greater than your total balance');
+    }
+
+    if (value < 0) {
+      throw new AppError('The value must be positive');
+    }
 
     let checkCategory = await categoryRepository.findOne({
       where: { title: category },
@@ -27,7 +38,6 @@ class CreateTransactionService {
 
     if (!checkCategory) {
       checkCategory = categoryRepository.create({ title: category });
-      await categoryRepository.save(checkCategory);
     }
 
     const newTransation = transactionRepository.create({
@@ -37,7 +47,8 @@ class CreateTransactionService {
       category_id: checkCategory.id,
     });
 
-    transactionRepository.save(newTransation);
+    await categoryRepository.save(checkCategory);
+    await transactionRepository.save(newTransation);
 
     return newTransation;
   }
